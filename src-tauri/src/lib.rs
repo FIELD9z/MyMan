@@ -19,6 +19,16 @@ struct CreateEntityRequest {
     tags: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateEntityRequest {
+    id: String,
+    title: String,
+    summary: Option<String>,
+    content: Option<String>,
+    tags: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Entity {
@@ -211,6 +221,131 @@ fn create_entity(state: State<'_, AppState>, request: CreateEntityRequest) -> Re
 }
 
 #[tauri::command]
+fn update_entity(state: State<'_, AppState>, request: UpdateEntityRequest) -> Result<Entity, String> {
+    let title = request.title.trim();
+    if title.is_empty() {
+        return Err("Title is required".to_owned());
+    }
+
+    let summary = request
+        .summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let content = request
+        .content
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let normalized_tags: Vec<String> = request
+        .tags
+        .iter()
+        .map(|tag| tag.trim().to_lowercase())
+        .filter(|tag| !tag.is_empty())
+        .collect();
+
+    let mut connection = state
+        .db
+        .lock()
+        .map_err(|error| format!("Failed to lock database: {error}"))?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| format!("Failed to start database transaction: {error}"))?;
+
+    let rows = transaction
+        .execute(
+            "UPDATE entities SET title = ?1, summary = ?2, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?3 AND archived_at IS NULL",
+            params![title, summary, request.id],
+        )
+        .map_err(|error| format!("Failed to update entity: {error}"))?;
+
+    if rows == 0 {
+        return Err(format!("Entity not found: {}", request.id));
+    }
+
+    if content.is_some() {
+        transaction
+            .execute(
+                "INSERT OR REPLACE INTO entity_contents (entity_id, body, format, updated_at) VALUES (?1, ?2, 'markdown', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+                params![request.id, content],
+            )
+            .map_err(|error| format!("Failed to update entity content: {error}"))?;
+    } else {
+        transaction
+            .execute(
+                "DELETE FROM entity_contents WHERE entity_id = ?1",
+                params![request.id],
+            )
+            .map_err(|error| format!("Failed to remove entity content: {error}"))?;
+    }
+
+    transaction
+        .execute("DELETE FROM entity_tags WHERE entity_id = ?1", params![request.id])
+        .map_err(|error| format!("Failed to clear tags: {error}"))?;
+
+    for tag in &normalized_tags {
+        let tag_id = Uuid::new_v4().to_string();
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO tags (id, name) VALUES (?1, ?2)",
+                params![tag_id, tag],
+            )
+            .map_err(|error| format!("Failed to create tag: {error}"))?;
+
+        let existing_tag_id: String = transaction
+            .query_row("SELECT id FROM tags WHERE name = ?1", params![tag], |row| row.get(0))
+            .map_err(|error| format!("Failed to load tag: {error}"))?;
+
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO entity_tags (entity_id, tag_id) VALUES (?1, ?2)",
+                params![request.id, existing_tag_id],
+            )
+            .map_err(|error| format!("Failed to link tag: {error}"))?;
+    }
+
+    transaction
+        .execute("DELETE FROM search_index WHERE entity_id = ?1", params![request.id])
+        .map_err(|error| format!("Failed to clear search index: {error}"))?;
+
+    transaction
+        .execute(
+            "INSERT INTO search_index (entity_id, title, summary, content, tags) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![request.id, title, summary, content, normalized_tags.join(" ")],
+        )
+        .map_err(|error| format!("Failed to update search index: {error}"))?;
+
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit entity update: {error}"))?;
+
+    load_entity(&connection, &request.id)
+}
+
+#[tauri::command]
+fn archive_entity(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let connection = state
+        .db
+        .lock()
+        .map_err(|error| format!("Failed to lock database: {error}"))?;
+
+    let rows = connection
+        .execute(
+            "UPDATE entities SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1 AND archived_at IS NULL",
+            params![id],
+        )
+        .map_err(|error| format!("Failed to archive entity: {error}"))?;
+
+    if rows == 0 {
+        return Err(format!("Entity not found or already archived: {id}"));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 fn list_entities(state: State<'_, AppState>, entity_type: Option<String>) -> Result<Vec<Entity>, String> {
     let connection = state
         .db
@@ -386,6 +521,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             create_entity,
+            update_entity,
+            archive_entity,
             list_entities,
             search_entities,
             dashboard_summary

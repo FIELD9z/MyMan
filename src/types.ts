@@ -19,6 +19,14 @@ export interface CreateEntityRequest {
   tags: string[]
 }
 
+export interface UpdateEntityRequest {
+  id: string
+  title: string
+  summary?: string
+  content?: string
+  tags: string[]
+}
+
 export interface DashboardSummary {
   notes: number
   tasks: number

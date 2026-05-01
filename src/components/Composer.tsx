@@ -1,0 +1,121 @@
+import { useEffect, useState, type FormEvent } from 'react'
+import type { CreateEntityRequest, Entity, EntityType, UpdateEntityRequest } from '../types'
+
+const entityTypes: Array<{ type: EntityType; label: string }> = [
+  { type: 'note', label: '笔记' },
+  { type: 'task', label: '任务' },
+  { type: 'event', label: '日程' },
+  { type: 'knowledge', label: '知识' },
+  { type: 'file', label: '文件' },
+]
+
+interface Props {
+  editing?: Entity | null
+  onSave: (request: CreateEntityRequest | UpdateEntityRequest) => Promise<void>
+  onCancelEdit: () => void
+}
+
+export function Composer({ editing, onSave, onCancelEdit }: Props) {
+  const [entityType, setEntityType] = useState<EntityType>('note')
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [tags, setTags] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const isEditing = editing != null
+
+  useEffect(() => {
+    if (editing) {
+      setTitle(editing.title)
+      setBody(editing.content ?? '')
+      setTags(editing.tags.join(', '))
+      setEntityType(editing.entityType)
+    } else {
+      setTitle('')
+      setBody('')
+      setTags('')
+      setEntityType('note')
+    }
+  }, [editing?.id, !!editing])
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsSaving(true)
+    try {
+      if (isEditing) {
+        await onSave({
+          id: editing!.id,
+          title,
+          summary: body.split('\n').find(Boolean) ?? '',
+          content: body,
+          tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+        })
+      } else {
+        await onSave({
+          entityType,
+          title,
+          summary: body.split('\n').find(Boolean) ?? '',
+          content: body,
+          tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+        })
+      }
+      // Reset only in create mode
+      if (!isEditing) {
+        setTitle('')
+        setBody('')
+        setTags('')
+      }
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <form className="composer" onSubmit={handleSubmit}>
+      <div className="form-row">
+        {isEditing ? (
+          <p className="edit-label">
+            类型：{entityTypes.find((t) => t.type === editing!.entityType)?.label ?? editing!.entityType}
+          </p>
+        ) : (
+          <label>
+            类型
+            <select value={entityType} onChange={(event) => setEntityType(event.target.value as EntityType)}>
+              {entityTypes.map((item) => (
+                <option key={item.type} value={item.type}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label>
+          标签
+          <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="工作, 灵感" />
+        </label>
+      </div>
+      <label>
+        标题
+        <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="标题..." />
+      </label>
+      <label>
+        Markdown 内容 / 文件描述
+        <textarea
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+          placeholder="写下内容..."
+        />
+      </label>
+      <div className="composer-actions">
+        <button type="submit" disabled={isSaving || !title.trim()}>
+          {isSaving ? '保存中...' : isEditing ? '更新' : '保存'}
+        </button>
+        {isEditing ? (
+          <button type="button" className="secondary" onClick={onCancelEdit}>
+            取消
+          </button>
+        ) : null}
+      </div>
+    </form>
+  )
+}

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
-import { createEntity, dashboardSummary, listEntities, searchEntities } from './lib/entities'
-import type { DashboardSummary, Entity, EntityType } from './types'
+import { Composer } from './components/Composer'
+import { EntityCard } from './components/EntityCard'
+import { archiveEntity, createEntity, dashboardSummary, listEntities, searchEntities, updateEntity } from './lib/entities'
+import type { CreateEntityRequest, DashboardSummary, Entity, EntityType, UpdateEntityRequest } from './types'
 
 const entityTypes: Array<{ type: EntityType; label: string; description: string }> = [
   { type: 'note', label: '随手记', description: '快速捕捉想法、碎片信息和临时记录' },
@@ -26,12 +28,8 @@ function App() {
   const [entities, setEntities] = useState<Entity[]>([])
   const [summary, setSummary] = useState<DashboardSummary>(emptySummary)
   const [query, setQuery] = useState('')
-  const [title, setTitle] = useState('')
-  const [entityType, setEntityType] = useState<EntityType>('note')
-  const [body, setBody] = useState('')
-  const [tags, setTags] = useState('')
+  const [editing, setEditing] = useState<Entity | null>(null)
   const [status, setStatus] = useState<string>('正在连接本地数据库...')
-  const [isSaving, setIsSaving] = useState(false)
 
   const activeTypeLabel = useMemo(() => {
     if (activeType === 'all') return '全部'
@@ -46,7 +44,6 @@ function App() {
           ? searchEntities(nextQuery)
           : listEntities(nextType === 'all' ? undefined : nextType),
       ])
-
       setSummary(nextSummary)
       setEntities(nextEntities)
       setStatus('本地数据已就绪')
@@ -57,7 +54,7 @@ function App() {
   }
 
   useEffect(() => {
-    async function loadInitialData() {
+    void (async () => {
       try {
         const [nextSummary, nextEntities] = await Promise.all([dashboardSummary(), listEntities()])
         setSummary(nextSummary)
@@ -67,9 +64,7 @@ function App() {
         setStatus(`无法连接 Tauri 后端：${String(error)}`)
         setEntities([])
       }
-    }
-
-    void loadInitialData()
+    })()
   }, [])
 
   async function handleFilter(nextType: EntityType | 'all') {
@@ -82,33 +77,42 @@ function App() {
     await refresh(activeType, query)
   }
 
-  async function handleCreate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setIsSaving(true)
+  async function handleCreate(request: CreateEntityRequest) {
     setStatus('正在保存...')
+    await createEntity(request)
+    setStatus('已保存')
+    await refresh(activeType)
+  }
 
-    try {
-      await createEntity({
-        entityType,
-        title,
-        summary: body.split('\n').find(Boolean) ?? '',
-        content: body,
-        tags: tags
-          .split(',')
-          .map((tag) => tag.trim())
-          .filter(Boolean),
-      })
+  async function handleUpdate(request: CreateEntityRequest | UpdateEntityRequest) {
+    setStatus('正在更新...')
+    await updateEntity(request as UpdateEntityRequest)
+    setEditing(null)
+    setStatus('已更新')
+    await refresh(activeType)
+  }
 
-      setTitle('')
-      setBody('')
-      setTags('')
-      setStatus('已保存到本地数据库')
-      await refresh(activeType)
-    } catch (error) {
-      setStatus(`保存失败：${String(error)}`)
-    } finally {
-      setIsSaving(false)
+  async function handleArchive(id: string) {
+    setStatus('正在归档...')
+    await archiveEntity(id)
+    setStatus('已归档')
+    await refresh(activeType)
+  }
+
+  async function handleSave(request: CreateEntityRequest | UpdateEntityRequest) {
+    if ('id' in request) {
+      await handleUpdate(request)
+    } else {
+      await handleCreate(request)
     }
+  }
+
+  function handleEdit(entity: Entity) {
+    setEditing(entity)
+  }
+
+  function handleCancelEdit() {
+    setEditing(null)
   }
 
   return (
@@ -171,39 +175,7 @@ function App() {
         </form>
 
         <div className="content-grid">
-          <form className="composer" onSubmit={handleCreate}>
-            <div className="form-row">
-              <label>
-                类型
-                <select value={entityType} onChange={(event) => setEntityType(event.target.value as EntityType)}>
-                  {entityTypes.map((item) => (
-                    <option key={item.type} value={item.type}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                标签
-                <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="工作, 灵感" />
-              </label>
-            </div>
-            <label>
-              标题
-              <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="记录一个想法" />
-            </label>
-            <label>
-              Markdown 内容 / 文件描述
-              <textarea
-                value={body}
-                onChange={(event) => setBody(event.target.value)}
-                placeholder="写下内容、任务背景、日程说明，或描述一个文件方便之后找回..."
-              />
-            </label>
-            <button type="submit" disabled={isSaving || !title.trim()}>
-              {isSaving ? '保存中...' : '保存'}
-            </button>
-          </form>
+          <Composer editing={editing} onSave={handleSave} onCancelEdit={handleCancelEdit} />
 
           <section className="entity-list" aria-live="polite">
             {entities.length === 0 ? (
@@ -212,7 +184,9 @@ function App() {
                 <p>先创建一条随手记，后续可以把它转为任务、知识条目或关联文件。</p>
               </div>
             ) : (
-              entities.map((entity) => <EntityCard key={entity.id} entity={entity} />)
+              entities.map((entity) => (
+                <EntityCard key={entity.id} entity={entity} onEdit={handleEdit} onArchive={handleArchive} />
+              ))
             )}
           </section>
         </div>
@@ -227,28 +201,6 @@ function SummaryItem({ label, value }: { label: string; value: number }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
-  )
-}
-
-function EntityCard({ entity }: { entity: Entity }) {
-  const type = entityTypes.find((item) => item.type === entity.entityType)
-
-  return (
-    <article className="entity-card">
-      <div>
-        <span className="entity-type">{type?.label ?? entity.entityType}</span>
-        <h3>{entity.title}</h3>
-        {entity.summary ? <p>{entity.summary}</p> : null}
-      </div>
-      {entity.tags.length > 0 ? (
-        <div className="tag-list">
-          {entity.tags.map((tag) => (
-            <span key={tag}>{tag}</span>
-          ))}
-        </div>
-      ) : null}
-      <small>{new Date(entity.updatedAt).toLocaleString()}</small>
-    </article>
   )
 }
 
