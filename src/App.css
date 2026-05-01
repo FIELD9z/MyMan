@@ -289,6 +289,51 @@ button.secondary {
   background: var(--chip);
 }
 
+.tag-nav {
+  margin-top: 1rem;
+}
+
+.tag-nav-label {
+  margin: 0 0 0.5rem;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.tag-list.filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tag-list.filter button {
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  color: var(--text-h);
+  background: var(--chip);
+  font-size: 0.82rem;
+}
+
+.tag-list.filter button.active {
+  color: white;
+  background: #4f46e5;
+}
+
+.search-bar button.mode-toggle {
+  border-radius: 14px;
+  padding: 0.85rem 0.75rem;
+  color: var(--text);
+  background: var(--chip);
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-width: 3rem;
+}
+
+.search-bar button.mode-toggle.or {
+  color: white;
+  background: #dc2626;
+}
+
 @media (max-width: 980px) {
   .app-shell,
   .workspace-header,

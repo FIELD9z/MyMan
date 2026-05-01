@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import './App.css'
 import { Composer } from './components/Composer'
 import { EntityCard } from './components/EntityCard'
-import { archiveEntity, createEntity, dashboardSummary, listEntities, searchEntities, updateEntity } from './lib/entities'
+import { archiveEntity, createEntity, dashboardSummary, listEntities, listTags, searchEntities, updateEntity } from './lib/entities'
 import type { CreateEntityRequest, DashboardSummary, Entity, EntityType, UpdateEntityRequest } from './types'
 
 const entityTypes: Array<{ type: EntityType; label: string; description: string }> = [
@@ -25,10 +25,13 @@ const emptySummary: DashboardSummary = {
 
 function App() {
   const [activeType, setActiveType] = useState<EntityType | 'all'>('all')
+  const [activeTag, setActiveTag] = useState<string | null>(null)
   const [entities, setEntities] = useState<Entity[]>([])
   const [summary, setSummary] = useState<DashboardSummary>(emptySummary)
   const [query, setQuery] = useState('')
+  const [searchMode, setSearchMode] = useState<'and' | 'or'>('and')
   const [editing, setEditing] = useState<Entity | null>(null)
+  const [allTags, setAllTags] = useState<string[]>([])
   const [status, setStatus] = useState<string>('正在连接本地数据库...')
 
   const activeTypeLabel = useMemo(() => {
@@ -36,13 +39,13 @@ function App() {
     return entityTypes.find((item) => item.type === activeType)?.label ?? activeType
   }, [activeType])
 
-  async function refresh(nextType = activeType, nextQuery = query) {
+  async function refresh(nextType = activeType, nextQuery = query, nextTag = activeTag, nextSearchMode = searchMode) {
     try {
       const [nextSummary, nextEntities] = await Promise.all([
         dashboardSummary(),
         nextQuery.trim()
-          ? searchEntities(nextQuery)
-          : listEntities(nextType === 'all' ? undefined : nextType),
+          ? searchEntities(nextQuery, nextSearchMode)
+          : listEntities(nextType === 'all' ? undefined : nextType, nextTag ?? undefined),
       ])
       setSummary(nextSummary)
       setEntities(nextEntities)
@@ -56,9 +59,14 @@ function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const [nextSummary, nextEntities] = await Promise.all([dashboardSummary(), listEntities()])
+        const [nextSummary, nextEntities, tags] = await Promise.all([
+          dashboardSummary(),
+          listEntities(),
+          listTags(),
+        ])
         setSummary(nextSummary)
         setEntities(nextEntities)
+        setAllTags(tags)
         setStatus('本地数据已就绪')
       } catch (error) {
         setStatus(`无法连接 Tauri 后端：${String(error)}`)
@@ -69,19 +77,29 @@ function App() {
 
   async function handleFilter(nextType: EntityType | 'all') {
     setActiveType(nextType)
-    await refresh(nextType)
+    await refresh(nextType, query, activeTag)
+  }
+
+  async function handleTagFilter(tag: string | null) {
+    setActiveTag(tag)
+    await refresh(activeType, query, tag)
   }
 
   async function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    await refresh(activeType, query)
+    await refresh(activeType, query, activeTag)
+  }
+
+  function toggleSearchMode() {
+    const next = searchMode === 'and' ? 'or' : 'and'
+    setSearchMode(next)
   }
 
   async function handleCreate(request: CreateEntityRequest) {
     setStatus('正在保存...')
     await createEntity(request)
     setStatus('已保存')
-    await refresh(activeType)
+    await refresh(activeType, query, activeTag)
   }
 
   async function handleUpdate(request: CreateEntityRequest | UpdateEntityRequest) {
@@ -89,14 +107,14 @@ function App() {
     await updateEntity(request as UpdateEntityRequest)
     setEditing(null)
     setStatus('已更新')
-    await refresh(activeType)
+    await refresh(activeType, query, activeTag)
   }
 
   async function handleArchive(id: string) {
     setStatus('正在归档...')
     await archiveEntity(id)
     setStatus('已归档')
-    await refresh(activeType)
+    await refresh(activeType, query, activeTag)
   }
 
   async function handleSave(request: CreateEntityRequest | UpdateEntityRequest) {
@@ -143,6 +161,26 @@ function App() {
           ))}
         </nav>
 
+        {allTags.length > 0 ? (
+          <nav className="tag-nav" aria-label="标签筛选">
+            <p className="tag-nav-label">标签</p>
+            <div className="tag-list filter">
+              <button className={activeTag === null ? 'active' : ''} onClick={() => void handleTagFilter(null)}>
+                全部
+              </button>
+              {allTags.map((tag) => (
+                <button
+                  key={tag}
+                  className={activeTag === tag ? 'active' : ''}
+                  onClick={() => void handleTagFilter(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </nav>
+        ) : null}
+
         <section className="status-card">
           <strong>状态</strong>
           <p>{status}</p>
@@ -169,8 +207,15 @@ function App() {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索标题、正文、标签或文件描述"
+            placeholder={searchMode === 'or' ? '搜索任意词...' : '搜索全部词...'}
           />
+          <button
+            type="button"
+            className={`mode-toggle ${searchMode}`}
+            onClick={toggleSearchMode}
+          >
+            {searchMode === 'or' ? 'OR' : 'AND'}
+          </button>
           <button type="submit">搜索</button>
         </form>
 

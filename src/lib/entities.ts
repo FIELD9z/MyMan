@@ -13,12 +13,16 @@ export function archiveEntity(id: string): Promise<void> {
   return invoke('archive_entity', { id })
 }
 
-export function listEntities(entityType?: EntityType): Promise<Entity[]> {
-  return invoke<Entity[]>('list_entities', { entityType })
+export function listEntities(entityType?: EntityType, tag?: string): Promise<Entity[]> {
+  return invoke<Entity[]>('list_entities', { entityType, tag })
 }
 
-export function searchEntities(query: string): Promise<Entity[]> {
-  return invoke<Entity[]>('search_entities', { query })
+export function searchEntities(query: string, searchMode?: 'and' | 'or'): Promise<Entity[]> {
+  return invoke<Entity[]>('search_entities', { query, searchMode })
+}
+
+export function listTags(): Promise<string[]> {
+  return invoke<string[]>('list_tags')
 }
 
 export function dashboardSummary(): Promise<DashboardSummary> {

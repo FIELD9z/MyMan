@@ -346,7 +346,7 @@ fn archive_entity(state: State<'_, AppState>, id: String) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn list_entities(state: State<'_, AppState>, entity_type: Option<String>) -> Result<Vec<Entity>, String> {
+fn list_entities(state: State<'_, AppState>, entity_type: Option<String>, tag: Option<String>) -> Result<Vec<Entity>, String> {
     let connection = state
         .db
         .lock()
@@ -371,8 +371,19 @@ fn list_entities(state: State<'_, AppState>, entity_type: Option<String>) -> Res
         "#,
     );
 
-    if entity_type.is_some() {
-        sql.push_str(" AND e.type = ?1");
+    let mut param_values: Vec<String> = Vec::new();
+
+    if let Some(ref et) = entity_type {
+        param_values.push(et.clone());
+        sql.push_str(&format!(" AND e.type = ?{}", param_values.len()));
+    }
+
+    if let Some(ref t) = tag {
+        param_values.push(t.clone());
+        sql.push_str(&format!(
+            " AND e.id IN (SELECT et2.entity_id FROM entity_tags et2 JOIN tags t2 ON t2.id = et2.tag_id WHERE t2.name = ?{})",
+            param_values.len()
+        ));
     }
 
     sql.push_str(" GROUP BY e.id ORDER BY e.updated_at DESC LIMIT 100");
@@ -381,16 +392,20 @@ fn list_entities(state: State<'_, AppState>, entity_type: Option<String>) -> Res
         .prepare(&sql)
         .map_err(|error| format!("Failed to prepare entity query: {error}"))?;
 
-    let rows = if let Some(entity_type) = entity_type {
-        statement
-            .query_map(params![entity_type], map_entity_row)
-            .map_err(|error| format!("Failed to list entities: {error}"))?
-            .collect::<Result<Vec<_>, _>>()
-    } else {
-        statement
+    let rows = match param_values.len() {
+        0 => statement
             .query_map([], map_entity_row)
             .map_err(|error| format!("Failed to list entities: {error}"))?
-            .collect::<Result<Vec<_>, _>>()
+            .collect::<Result<Vec<_>, _>>(),
+        1 => statement
+            .query_map(params![param_values[0]], map_entity_row)
+            .map_err(|error| format!("Failed to list entities: {error}"))?
+            .collect::<Result<Vec<_>, _>>(),
+        2 => statement
+            .query_map(params![param_values[0], param_values[1]], map_entity_row)
+            .map_err(|error| format!("Failed to list entities: {error}"))?
+            .collect::<Result<Vec<_>, _>>(),
+        _ => unreachable!(),
     };
 
     rows.map_err(|error| format!("Failed to read entities: {error}"))
@@ -410,10 +425,10 @@ fn map_entity_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entity> {
 }
 
 #[tauri::command]
-fn search_entities(state: State<'_, AppState>, query: String) -> Result<Vec<Entity>, String> {
+fn search_entities(state: State<'_, AppState>, query: String, search_mode: Option<String>) -> Result<Vec<Entity>, String> {
     let query = query.trim();
     if query.is_empty() {
-        return list_entities(state, None);
+        return list_entities(state, None, None);
     }
 
     let connection = state
@@ -421,11 +436,13 @@ fn search_entities(state: State<'_, AppState>, query: String) -> Result<Vec<Enti
         .lock()
         .map_err(|error| format!("Failed to lock database: {error}"))?;
 
+    let operator = if search_mode.as_deref() == Some("or") { " OR " } else { " AND " };
+
     let fts_query = query
         .split_whitespace()
         .map(|token| format!("\"{}\"*", token.replace('"', "\"\"")))
         .collect::<Vec<_>>()
-        .join(" AND ");
+        .join(operator);
 
     let mut statement = connection
         .prepare(
@@ -460,6 +477,37 @@ fn search_entities(state: State<'_, AppState>, query: String) -> Result<Vec<Enti
         .map_err(|error| format!("Failed to read search results: {error}"))?;
 
     Ok(entities)
+}
+
+#[tauri::command]
+fn list_tags(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let connection = state
+        .db
+        .lock()
+        .map_err(|error| format!("Failed to lock database: {error}"))?;
+
+    let mut statement = connection
+        .prepare(
+            r#"
+            SELECT DISTINCT t.name
+            FROM tags t
+            JOIN entity_tags et ON et.tag_id = t.id
+            JOIN entities e ON e.id = et.entity_id
+            WHERE e.archived_at IS NULL
+            ORDER BY t.name
+            "#,
+        )
+        .map_err(|error| format!("Failed to prepare tag query: {error}"))?;
+
+    let rows = statement
+        .query_map([], |row| row.get(0))
+        .map_err(|error| format!("Failed to list tags: {error}"))?;
+
+    let tags: Vec<String> = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read tags: {error}"))?;
+
+    Ok(tags)
 }
 
 #[tauri::command]
@@ -524,6 +572,7 @@ pub fn run() {
             update_entity,
             archive_entity,
             list_entities,
+            list_tags,
             search_entities,
             dashboard_summary
         ])
