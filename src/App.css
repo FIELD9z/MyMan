@@ -16,6 +16,7 @@
   border-right: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(24px);
+  overflow-y: auto;
 }
 
 .eyebrow {

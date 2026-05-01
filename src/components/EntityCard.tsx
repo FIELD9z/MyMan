@@ -1,7 +1,7 @@
 import type { Entity } from '../types'
 
 const labels: Record<string, string> = {
-  note: '笔记',
+  note: '随手记',
   task: '任务',
   event: '日程',
   knowledge: '知识',

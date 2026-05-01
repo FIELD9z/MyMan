@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import type { CreateEntityRequest, Entity, EntityType, UpdateEntityRequest } from '../types'
 
 const entityTypes: Array<{ type: EntityType; label: string }> = [
-  { type: 'note', label: '笔记' },
+  { type: 'note', label: '随手记' },
   { type: 'task', label: '任务' },
   { type: 'event', label: '日程' },
   { type: 'knowledge', label: '知识' },
