@@ -145,7 +145,7 @@ button {
 
 .search-bar {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 0.75rem;
 }
 

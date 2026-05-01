@@ -56,6 +56,15 @@ function App() {
     }
   }
 
+  async function refreshTags() {
+    try {
+      const tags = await listTags()
+      setAllTags(tags)
+    } catch {
+      // ignore tag refresh errors
+    }
+  }
+
   useEffect(() => {
     void (async () => {
       try {
@@ -93,13 +102,23 @@ function App() {
   function toggleSearchMode() {
     const next = searchMode === 'and' ? 'or' : 'and'
     setSearchMode(next)
+    if (query.trim()) {
+      void (async () => {
+        try {
+          const result = await searchEntities(query, next)
+          setEntities(result)
+        } catch {
+          // keep current results on error
+        }
+      })()
+    }
   }
 
   async function handleCreate(request: CreateEntityRequest) {
     setStatus('正在保存...')
     await createEntity(request)
     setStatus('已保存')
-    await refresh(activeType, query, activeTag)
+    await Promise.all([refresh(activeType, query, activeTag), refreshTags()])
   }
 
   async function handleUpdate(request: CreateEntityRequest | UpdateEntityRequest) {
@@ -107,14 +126,14 @@ function App() {
     await updateEntity(request as UpdateEntityRequest)
     setEditing(null)
     setStatus('已更新')
-    await refresh(activeType, query, activeTag)
+    await Promise.all([refresh(activeType, query, activeTag), refreshTags()])
   }
 
   async function handleArchive(id: string) {
     setStatus('正在归档...')
     await archiveEntity(id)
     setStatus('已归档')
-    await refresh(activeType, query, activeTag)
+    await Promise.all([refresh(activeType, query, activeTag), refreshTags()])
   }
 
   async function handleSave(request: CreateEntityRequest | UpdateEntityRequest) {
@@ -194,7 +213,7 @@ function App() {
             <h2>{activeTypeLabel}工作台</h2>
           </div>
           <div className="summary-grid">
-            <SummaryItem label="笔记" value={summary.notes} />
+            <SummaryItem label="随手记" value={summary.notes} />
             <SummaryItem label="任务" value={summary.tasks} />
             <SummaryItem label="日程" value={summary.events} />
             <SummaryItem label="知识" value={summary.knowledge} />
