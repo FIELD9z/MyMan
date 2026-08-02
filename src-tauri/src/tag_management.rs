@@ -18,7 +18,7 @@ pub fn list_tag_summaries(connection: &Connection) -> Result<Vec<TagSummary>, St
         )
         .map_err(|error| format!("Failed to prepare tag summary query: {error}"))?;
 
-    statement
+    let rows = statement
         .query_map([], |row| {
             Ok(TagSummary {
                 name: row.get(0)?,
@@ -26,9 +26,11 @@ pub fn list_tag_summaries(connection: &Connection) -> Result<Vec<TagSummary>, St
                 archived_count: row.get(2)?,
             })
         })
-        .map_err(|error| format!("Failed to list tag summaries: {error}"))?
+        .map_err(|error| format!("Failed to list tag summaries: {error}"))?;
+    let summaries = rows
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to read tag summaries: {error}"))
+        .map_err(|error| format!("Failed to read tag summaries: {error}"))?;
+    Ok(summaries)
 }
 
 pub fn rename_tag(connection: &Connection, old_name: &str, new_name: &str) -> Result<(), String> {
@@ -152,11 +154,13 @@ fn refresh_search_index_tags(connection: &Connection) -> Result<(), String> {
         let mut statement = connection
             .prepare("SELECT entity_id FROM search_index")
             .map_err(|error| format!("Failed to prepare search index refresh: {error}"))?;
-        statement
+        let rows = statement
             .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|error| format!("Failed to query indexed entities: {error}"))?
+            .map_err(|error| format!("Failed to query indexed entities: {error}"))?;
+        let entity_ids = rows
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| format!("Failed to read indexed entities: {error}"))?
+            .map_err(|error| format!("Failed to read indexed entities: {error}"))?;
+        entity_ids
     };
 
     for entity_id in entity_ids {
