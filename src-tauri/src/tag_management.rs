@@ -7,8 +7,8 @@ pub fn list_tag_summaries(connection: &Connection) -> Result<Vec<TagSummary>, St
             r#"
             SELECT
                 t.name,
-                COALESCE(SUM(CASE WHEN e.archived_at IS NULL THEN 1 ELSE 0 END), 0) AS active_count,
-                COALESCE(SUM(CASE WHEN e.archived_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS archived_count
+                COALESCE(SUM(CASE WHEN e.id IS NOT NULL AND e.archived_at IS NULL THEN 1 ELSE 0 END), 0) AS active_count,
+                COALESCE(SUM(CASE WHEN e.id IS NOT NULL AND e.archived_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS archived_count
             FROM tags t
             LEFT JOIN entity_tags et ON et.tag_id = t.id
             LEFT JOIN entities e ON e.id = et.entity_id
@@ -247,49 +247,49 @@ mod tests {
     #[test]
     fn renames_tag_and_refreshes_entity_and_search_results() {
         let mut connection = test_connection();
-        create_tagged_entity(&mut connection, "Tagged item", &["old-label"]);
+        create_tagged_entity(&mut connection, "Tagged item", &["oldlabel"]);
 
-        rename_tag(&connection, "old-label", "new-label").expect("rename tag");
+        rename_tag(&connection, "oldlabel", "newlabel").expect("rename tag");
 
         let page = list_entities(
             &connection,
             ListEntitiesRequest {
-                tag: Some("new-label".to_owned()),
+                tag: Some("newlabel".to_owned()),
                 ..Default::default()
             },
         )
         .expect("filter renamed tag");
         assert_eq!(page.total, 1);
-        assert_eq!(page.items[0].tags, vec!["new-label"]);
-        assert_eq!(search_by_tag_text(&connection, "old-label"), 0);
-        assert_eq!(search_by_tag_text(&connection, "new-label"), 1);
-        assert!(rename_tag(&connection, "new-label", "new-label").is_err());
+        assert_eq!(page.items[0].tags, vec!["newlabel"]);
+        assert_eq!(search_by_tag_text(&connection, "oldlabel"), 0);
+        assert_eq!(search_by_tag_text(&connection, "newlabel"), 1);
+        assert!(rename_tag(&connection, "newlabel", "newlabel").is_err());
     }
 
     #[test]
     fn merges_tag_links_without_duplicates_and_refreshes_search() {
         let mut connection = test_connection();
-        create_tagged_entity(&mut connection, "Source only", &["source-label"]);
-        create_tagged_entity(&mut connection, "Target only", &["target-label"]);
+        create_tagged_entity(&mut connection, "Source only", &["sourcelabel"]);
+        create_tagged_entity(&mut connection, "Target only", &["targetlabel"]);
         let both_id = create_tagged_entity(
             &mut connection,
             "Both labels",
-            &["source-label", "target-label"],
+            &["sourcelabel", "targetlabel"],
         );
 
-        merge_tags(&connection, "source-label", "target-label").expect("merge tags");
+        merge_tags(&connection, "sourcelabel", "targetlabel").expect("merge tags");
 
         let page = list_entities(
             &connection,
             ListEntitiesRequest {
-                tag: Some("target-label".to_owned()),
+                tag: Some("targetlabel".to_owned()),
                 ..Default::default()
             },
         )
         .expect("filter merged tag");
         assert_eq!(page.total, 3);
-        assert_eq!(search_by_tag_text(&connection, "source-label"), 0);
-        assert_eq!(search_by_tag_text(&connection, "target-label"), 3);
+        assert_eq!(search_by_tag_text(&connection, "sourcelabel"), 0);
+        assert_eq!(search_by_tag_text(&connection, "targetlabel"), 3);
 
         let duplicate_count: i64 = connection
             .query_row(
@@ -297,14 +297,14 @@ mod tests {
                 SELECT COUNT(*)
                 FROM entity_tags et
                 JOIN tags t ON t.id = et.tag_id
-                WHERE et.entity_id = ?1 AND t.name = 'target-label'
+                WHERE et.entity_id = ?1 AND t.name = 'targetlabel'
                 "#,
                 params![both_id],
                 |row| row.get(0),
             )
             .expect("count merged links");
         assert_eq!(duplicate_count, 1);
-        assert!(merge_tags(&connection, "missing", "target-label").is_err());
+        assert!(merge_tags(&connection, "missing", "targetlabel").is_err());
     }
 
     #[test]
@@ -332,7 +332,12 @@ mod tests {
             .expect("used summary");
         assert_eq!(used.active_count, 1);
         assert_eq!(used.archived_count, 1);
-        assert!(summaries.iter().any(|tag| tag.name == "orphan"));
+        let orphan = summaries
+            .iter()
+            .find(|tag| tag.name == "orphan")
+            .expect("orphan summary");
+        assert_eq!(orphan.active_count, 0);
+        assert_eq!(orphan.archived_count, 0);
 
         assert_eq!(cleanup_unused_tags(&connection).expect("cleanup tags"), 1);
         let summaries = list_tag_summaries(&connection).expect("list summaries after cleanup");
