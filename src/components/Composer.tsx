@@ -1,13 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { entityTypeConfigs, entityTypeLabel } from '../lib/entityTypes'
 import type { CreateEntityRequest, Entity, EntityType, UpdateEntityRequest } from '../types'
-
-const entityTypes: Array<{ type: EntityType; label: string }> = [
-  { type: 'note', label: '随手记' },
-  { type: 'task', label: '任务' },
-  { type: 'event', label: '日程' },
-  { type: 'knowledge', label: '知识' },
-  { type: 'file', label: '文件' },
-]
 
 interface Props {
   editing?: Entity | null
@@ -36,15 +29,15 @@ export function Composer({ editing, onSave, onCancelEdit }: Props) {
       setTags('')
       setEntityType('note')
     }
-  }, [editing?.id, !!editing])
+  }, [editing])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsSaving(true)
     try {
-      if (isEditing) {
+      if (editing) {
         await onSave({
-          id: editing!.id,
+          id: editing.id,
           title,
           summary: body.split('\n').find(Boolean) ?? '',
           content: body,
@@ -75,13 +68,13 @@ export function Composer({ editing, onSave, onCancelEdit }: Props) {
       <div className="form-row">
         {isEditing ? (
           <p className="edit-label">
-            类型：{entityTypes.find((t) => t.type === editing!.entityType)?.label ?? editing!.entityType}
+            类型：{editing ? entityTypeLabel(editing.entityType) : ''}
           </p>
         ) : (
           <label>
             类型
             <select value={entityType} onChange={(event) => setEntityType(event.target.value as EntityType)}>
-              {entityTypes.map((item) => (
+              {entityTypeConfigs.map((item) => (
                 <option key={item.type} value={item.type}>
                   {item.label}
                 </option>

@@ -27,6 +27,18 @@ export interface UpdateEntityRequest {
   tags: string[]
 }
 
+export interface ListEntitiesRequest {
+  entityType?: EntityType
+  tag?: string
+}
+
+export type SearchMode = 'and' | 'or'
+
+export interface SearchEntitiesRequest extends ListEntitiesRequest {
+  query: string
+  searchMode: SearchMode
+}
+
 export interface DashboardSummary {
   notes: number
   tasks: number

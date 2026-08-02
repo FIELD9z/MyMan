@@ -1,12 +1,5 @@
+import { entityTypeLabel } from '../lib/entityTypes'
 import type { Entity } from '../types'
-
-const labels: Record<string, string> = {
-  note: '随手记',
-  task: '任务',
-  event: '日程',
-  knowledge: '知识',
-  file: '文件',
-}
 
 interface Props {
   entity: Entity
@@ -18,7 +11,7 @@ export function EntityCard({ entity, onEdit, onArchive }: Props) {
   return (
     <article className="entity-card">
       <div>
-        <span className="entity-type">{labels[entity.entityType] ?? entity.entityType}</span>
+        <span className="entity-type">{entityTypeLabel(entity.entityType)}</span>
         <h3>{entity.title}</h3>
         {entity.summary ? <p>{entity.summary}</p> : null}
       </div>

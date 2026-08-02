@@ -3,16 +3,9 @@ import type { FormEvent } from 'react'
 import './App.css'
 import { Composer } from './components/Composer'
 import { EntityCard } from './components/EntityCard'
+import { entityTypeConfigs, summaryKeyForType } from './lib/entityTypes'
 import { archiveEntity, createEntity, dashboardSummary, listEntities, listTags, searchEntities, updateEntity } from './lib/entities'
-import type { CreateEntityRequest, DashboardSummary, Entity, EntityType, UpdateEntityRequest } from './types'
-
-const entityTypes: Array<{ type: EntityType; label: string; description: string }> = [
-  { type: 'note', label: '随手记', description: '快速捕捉想法、碎片信息和临时记录' },
-  { type: 'task', label: '任务', description: '可执行事项、截止时间和后续安排' },
-  { type: 'event', label: '日程', description: '时间块、会议和应用内提醒' },
-  { type: 'knowledge', label: '知识', description: 'Markdown 长文、资料沉淀和双向关联' },
-  { type: 'file', label: '文件', description: '文件路径、描述、标签和基础元数据' },
-]
+import type { CreateEntityRequest, DashboardSummary, Entity, EntityType, ListEntitiesRequest, SearchMode, UpdateEntityRequest } from './types'
 
 const emptySummary: DashboardSummary = {
   notes: 0,
@@ -29,23 +22,24 @@ function App() {
   const [entities, setEntities] = useState<Entity[]>([])
   const [summary, setSummary] = useState<DashboardSummary>(emptySummary)
   const [query, setQuery] = useState('')
-  const [searchMode, setSearchMode] = useState<'and' | 'or'>('and')
+  const [searchMode, setSearchMode] = useState<SearchMode>('and')
   const [editing, setEditing] = useState<Entity | null>(null)
   const [allTags, setAllTags] = useState<string[]>([])
   const [status, setStatus] = useState<string>('正在连接本地数据库...')
 
   const activeTypeLabel = useMemo(() => {
     if (activeType === 'all') return '全部'
-    return entityTypes.find((item) => item.type === activeType)?.label ?? activeType
+    return entityTypeConfigs.find((item) => item.type === activeType)?.label ?? activeType
   }, [activeType])
 
   async function refresh(nextType = activeType, nextQuery = query, nextTag = activeTag, nextSearchMode = searchMode) {
+    const filters = entityFilters(nextType, nextTag)
     try {
       const [nextSummary, nextEntities] = await Promise.all([
         dashboardSummary(),
         nextQuery.trim()
-          ? searchEntities(nextQuery, nextSearchMode)
-          : listEntities(nextType === 'all' ? undefined : nextType, nextTag ?? undefined),
+          ? searchEntities({ query: nextQuery, searchMode: nextSearchMode, ...filters })
+          : listEntities(filters),
       ])
       setSummary(nextSummary)
       setEntities(nextEntities)
@@ -102,16 +96,7 @@ function App() {
   function toggleSearchMode() {
     const next = searchMode === 'and' ? 'or' : 'and'
     setSearchMode(next)
-    if (query.trim()) {
-      void (async () => {
-        try {
-          const result = await searchEntities(query, next)
-          setEntities(result)
-        } catch {
-          // keep current results on error
-        }
-      })()
-    }
+    void refresh(activeType, query, activeTag, next)
   }
 
   async function handleCreate(request: CreateEntityRequest) {
@@ -168,14 +153,14 @@ function App() {
             全部
             <span>{entities.length}</span>
           </button>
-          {entityTypes.map((item) => (
+          {entityTypeConfigs.map((item) => (
             <button
               key={item.type}
               className={activeType === item.type ? 'active' : ''}
               onClick={() => void handleFilter(item.type)}
             >
               {item.label}
-              <span>{summary[summaryKey(item.type)]}</span>
+              <span>{summary[summaryKeyForType(item.type)]}</span>
             </button>
           ))}
         </nav>
@@ -268,12 +253,11 @@ function SummaryItem({ label, value }: { label: string; value: number }) {
   )
 }
 
-function summaryKey(type: EntityType): keyof DashboardSummary {
-  if (type === 'note') return 'notes'
-  if (type === 'task') return 'tasks'
-  if (type === 'event') return 'events'
-  if (type === 'knowledge') return 'knowledge'
-  return 'files'
+function entityFilters(activeType: EntityType | 'all', activeTag: string | null): ListEntitiesRequest {
+  return {
+    entityType: activeType === 'all' ? undefined : activeType,
+    tag: activeTag ?? undefined,
+  }
 }
 
 export default App

@@ -1,4 +1,4 @@
-# Myman
+﻿# Myman
 
 Myman is a local-first personal assistant desktop app. The first version focuses on quick notes, tasks, schedules, Markdown knowledge entries, file descriptions, tags, and unified local search.
 
@@ -16,12 +16,14 @@ npm install
 npm run dev
 npm run build
 npm run lint
+npm run test:run
+npm run verify
 npm run tauri:dev
 npm run tauri:build
 npm run tauri:build:no-bundle
 ```
 
-`npm run dev`, `npm run build`, and `npm run lint` validate the frontend. `npm run tauri:dev`, `npm run tauri:build`, and `npm run tauri:build:no-bundle` also require a working Rust toolchain with `cargo` and `rustc` available on `PATH`.
+`npm run dev`, `npm run build`, `npm run lint`, and `npm run test:run` validate the frontend. `npm run verify` runs the frontend checks plus Rust tests and clippy. `npm run tauri:dev`, `npm run tauri:build`, and `npm run tauri:build:no-bundle` also require a working Rust toolchain with `cargo` and `rustc` available on `PATH`.
 
 On Windows, Tauri's MSVC target also needs Visual Studio Build Tools with the C++ workload. If a normal shell cannot find `link.exe`, run the Tauri commands from the Visual Studio developer environment:
 
@@ -51,6 +53,8 @@ The proxy is especially useful for `npm`, Rust crates, rustup, and Tauri's Windo
 
 - React app shell for the main dashboard, quick capture form, entity filters, and global search input.
 - Tauri command layer for creating, listing, searching, and summarizing entities.
+- Versioned SQLite migration runner with compatibility for existing initial databases.
+- Focused Rust and React tests for the baseline CRUD, search, filter, and component workflows.
 - Initial SQLite migration for the unified entity model:
   - `entities`
   - `entity_properties`
@@ -69,3 +73,6 @@ The proxy is especially useful for `npm`, Rust crates, rustup, and Tauri's Windo
 Notes, tasks, events, knowledge entries, and file records share one entity model. Type-specific fields live in properties or specialized tables, while tags, content, links, reminders, and search indexing are shared across entity types.
 
 Files are metadata-only in the MVP: file name, path, description, tags, type, hash, size, and modified time. PDF, Office, OCR, and semantic indexing are planned as later indexing extensions.
+## Learning workflow
+
+This project is also structured as a 12-week learning project. Start with `LEARNING.md`, then use the detailed roadmap, weekly log, concept notebook, exercises, and question backlog under `docs/learning/`.
