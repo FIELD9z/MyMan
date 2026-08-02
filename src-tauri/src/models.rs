@@ -117,6 +117,28 @@ pub struct SearchEntitiesRequest {
     pub offset: Option<u32>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameTagRequest {
+    pub old_name: String,
+    pub new_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeTagRequest {
+    pub source_name: String,
+    pub target_name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagSummary {
+    pub name: String,
+    pub active_count: i64,
+    pub archived_count: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entity {
