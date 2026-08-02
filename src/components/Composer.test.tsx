@@ -27,6 +27,22 @@ describe('Composer', () => {
     })
   })
 
+  it('keeps form values and shows an error when saving fails', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockRejectedValue(new Error('database unavailable'))
+
+    render(<Composer onSave={onSave} onCancelEdit={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('标题'), 'Unsaved note')
+    await user.type(screen.getByLabelText('Markdown 内容 / 文件描述'), 'Keep this body')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('database unavailable')
+    expect(screen.getByLabelText('标题')).toHaveValue('Unsaved note')
+    expect(screen.getByLabelText('Markdown 内容 / 文件描述')).toHaveValue('Keep this body')
+    expect(screen.getByRole('button', { name: '保存' })).toBeEnabled()
+  })
+
   it('disables create submit until a title exists', () => {
     render(<Composer onSave={vi.fn()} onCancelEdit={vi.fn()} />)
 
