@@ -26,6 +26,7 @@ pub fn run() {
             commands::create_entity,
             commands::update_entity,
             commands::archive_entity,
+            commands::restore_entity,
             commands::list_entities,
             commands::list_tags,
             commands::search_entities,
