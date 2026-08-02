@@ -3,6 +3,7 @@ import type {
   CreateEntityRequest,
   DashboardSummary,
   Entity,
+  EntityPage,
   ListEntitiesRequest,
   SearchEntitiesRequest,
   UpdateEntityRequest,
@@ -20,12 +21,16 @@ export function archiveEntity(id: string): Promise<void> {
   return invoke('archive_entity', { id })
 }
 
-export function listEntities(request: ListEntitiesRequest = {}): Promise<Entity[]> {
-  return invoke<Entity[]>('list_entities', { request })
+export function restoreEntity(id: string): Promise<void> {
+  return invoke('restore_entity', { id })
 }
 
-export function searchEntities(request: SearchEntitiesRequest): Promise<Entity[]> {
-  return invoke<Entity[]>('search_entities', { request })
+export function listEntities(request: ListEntitiesRequest = {}): Promise<EntityPage> {
+  return invoke<EntityPage>('list_entities', { request })
+}
+
+export function searchEntities(request: SearchEntitiesRequest): Promise<EntityPage> {
+  return invoke<EntityPage>('search_entities', { request })
 }
 
 export function listTags(): Promise<string[]> {
