@@ -80,6 +80,10 @@ pub struct UpdateEntityRequest {
 pub struct ListEntitiesRequest {
     pub entity_type: Option<EntityType>,
     pub tag: Option<String>,
+    #[serde(default)]
+    pub archived: bool,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
@@ -107,6 +111,10 @@ pub struct SearchEntitiesRequest {
     pub search_mode: SearchMode,
     pub entity_type: Option<EntityType>,
     pub tag: Option<String>,
+    #[serde(default)]
+    pub archived: bool,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -120,6 +128,13 @@ pub struct Entity {
     pub tags: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityPage {
+    pub items: Vec<Entity>,
+    pub total: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
