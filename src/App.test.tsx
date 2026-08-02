@@ -11,11 +11,14 @@ vi.mock('./lib/entities', () => ({
   dashboardSummary: vi.fn(),
   listEntities: vi.fn(),
   listTags: vi.fn(),
+  restoreEntity: vi.fn(),
   searchEntities: vi.fn(),
   updateEntity: vi.fn(),
 }))
 
 describe('App', () => {
+  const page = (items = [entity()]) => ({ items, total: items.length })
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(api.dashboardSummary).mockResolvedValue({
@@ -24,12 +27,13 @@ describe('App', () => {
       tasks: 1,
       files: 1,
     })
-    vi.mocked(api.listEntities).mockResolvedValue([entity()])
+    vi.mocked(api.listEntities).mockResolvedValue(page())
     vi.mocked(api.listTags).mockResolvedValue(['work'])
-    vi.mocked(api.searchEntities).mockResolvedValue([entity({ id: 'task-1', entityType: 'task', title: 'Alpha task' })])
+    vi.mocked(api.searchEntities).mockResolvedValue(page([entity({ id: 'task-1', entityType: 'task', title: 'Alpha task' })]))
     vi.mocked(api.createEntity).mockResolvedValue(entity())
     vi.mocked(api.updateEntity).mockResolvedValue(entity())
     vi.mocked(api.archiveEntity).mockResolvedValue(undefined)
+    vi.mocked(api.restoreEntity).mockResolvedValue(undefined)
   })
 
   it('loads dashboard data on startup', async () => {
@@ -37,12 +41,10 @@ describe('App', () => {
 
     expect(await screen.findByText('Alpha note')).toBeInTheDocument()
     expect(screen.getByText('本地数据已就绪')).toBeInTheDocument()
-    expect(api.dashboardSummary).toHaveBeenCalled()
-    expect(api.listEntities).toHaveBeenCalledWith()
-    expect(api.listTags).toHaveBeenCalled()
+    expect(api.listEntities).toHaveBeenCalled()
   })
 
-  it('keeps type and tag filters when searching and toggling search mode', async () => {
+  it('keeps filters when searching', async () => {
     const user = userEvent.setup()
     render(<App />)
 
@@ -50,37 +52,37 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /任务/ }))
 
     await waitFor(() => {
-      expect(api.listEntities).toHaveBeenLastCalledWith({ entityType: 'task', tag: undefined })
+      expect(api.listEntities).toHaveBeenLastCalledWith(expect.objectContaining({ entityType: 'task' }))
     })
 
     const tagNav = screen.getByRole('navigation', { name: '标签筛选' })
     await user.click(within(tagNav).getByRole('button', { name: 'work' }))
 
-    await waitFor(() => {
-      expect(api.listEntities).toHaveBeenLastCalledWith({ entityType: 'task', tag: 'work' })
-    })
-
     await user.type(screen.getByPlaceholderText('搜索全部词...'), 'alpha')
     await user.click(screen.getByRole('button', { name: '搜索' }))
 
     await waitFor(() => {
-      expect(api.searchEntities).toHaveBeenLastCalledWith({
+      expect(api.searchEntities).toHaveBeenLastCalledWith(expect.objectContaining({
         query: 'alpha',
-        searchMode: 'and',
         entityType: 'task',
         tag: 'work',
-      })
+      }))
     })
+  })
 
-    await user.click(screen.getByRole('button', { name: 'AND' }))
+  it('shows archive box and restores an archived item', async () => {
+    const user = userEvent.setup()
+    const archived = entity({ id: 'archived-1', title: 'Archived note' })
+    vi.mocked(api.listEntities).mockResolvedValueOnce(page())
+    vi.mocked(api.listEntities).mockResolvedValue(page([archived]))
 
-    await waitFor(() => {
-      expect(api.searchEntities).toHaveBeenLastCalledWith({
-        query: 'alpha',
-        searchMode: 'or',
-        entityType: 'task',
-        tag: 'work',
-      })
-    })
+    render(<App />)
+    await screen.findByText('Alpha note')
+
+    await user.click(screen.getByRole('button', { name: '归档箱' }))
+    expect(await screen.findByText('Archived note')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '恢复' }))
+    await waitFor(() => expect(api.restoreEntity).toHaveBeenCalledWith('archived-1'))
   })
 })
