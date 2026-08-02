@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod entities;
 mod models;
+mod tag_management;
 
 use tauri::Manager;
 
@@ -29,6 +30,10 @@ pub fn run() {
             commands::restore_entity,
             commands::list_entities,
             commands::list_tags,
+            commands::list_tag_summaries,
+            commands::rename_tag,
+            commands::merge_tags,
+            commands::cleanup_unused_tags,
             commands::search_entities,
             commands::dashboard_summary
         ])
