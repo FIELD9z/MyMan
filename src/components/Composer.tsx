@@ -14,10 +14,12 @@ export function Composer({ editing, onSave, onCancelEdit }: Props) {
   const [body, setBody] = useState('')
   const [tags, setTags] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const isEditing = editing != null
 
   useEffect(() => {
+    setSaveError(null)
     if (editing) {
       setTitle(editing.title)
       setBody(editing.content ?? '')
@@ -34,6 +36,8 @@ export function Composer({ editing, onSave, onCancelEdit }: Props) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsSaving(true)
+    setSaveError(null)
+
     try {
       if (editing) {
         await onSave({
@@ -41,7 +45,7 @@ export function Composer({ editing, onSave, onCancelEdit }: Props) {
           title,
           summary: body.split('\n').find(Boolean) ?? '',
           content: body,
-          tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+          tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
         })
       } else {
         await onSave({
@@ -49,15 +53,17 @@ export function Composer({ editing, onSave, onCancelEdit }: Props) {
           title,
           summary: body.split('\n').find(Boolean) ?? '',
           content: body,
-          tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+          tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
         })
       }
-      // Reset only in create mode
+
       if (!isEditing) {
         setTitle('')
         setBody('')
         setTags('')
       }
+    } catch (error) {
+      setSaveError(`无法保存：${String(error)}`)
     } finally {
       setIsSaving(false)
     }
@@ -99,6 +105,11 @@ export function Composer({ editing, onSave, onCancelEdit }: Props) {
           placeholder="写下内容..."
         />
       </label>
+      {saveError ? (
+        <p className="form-error" role="alert">
+          {saveError}
+        </p>
+      ) : null}
       <div className="composer-actions">
         <button type="submit" disabled={isSaving || !title.trim()}>
           {isSaving ? '保存中...' : isEditing ? '更新' : '保存'}
