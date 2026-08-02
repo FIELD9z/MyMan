@@ -1,9 +1,10 @@
 use crate::db::AppState;
 use crate::entities;
 use crate::models::{
-    CreateEntityRequest, DashboardSummary, Entity, EntityPage, ListEntitiesRequest,
-    SearchEntitiesRequest, UpdateEntityRequest,
+    CreateEntityRequest, DashboardSummary, Entity, EntityPage, ListEntitiesRequest, MergeTagRequest,
+    RenameTagRequest, SearchEntitiesRequest, TagSummary, UpdateEntityRequest,
 };
+use crate::tag_management;
 use tauri::State;
 
 #[tauri::command]
@@ -46,6 +47,30 @@ pub fn search_entities(state: State<'_, AppState>, request: SearchEntitiesReques
 pub fn list_tags(state: State<'_, AppState>) -> Result<Vec<String>, String> {
     let connection = state.db.lock().map_err(|e| format!("Failed to lock database: {e}"))?;
     entities::list_tags(&connection)
+}
+
+#[tauri::command]
+pub fn list_tag_summaries(state: State<'_, AppState>) -> Result<Vec<TagSummary>, String> {
+    let connection = state.db.lock().map_err(|e| format!("Failed to lock database: {e}"))?;
+    tag_management::list_tag_summaries(&connection)
+}
+
+#[tauri::command]
+pub fn rename_tag(state: State<'_, AppState>, request: RenameTagRequest) -> Result<(), String> {
+    let connection = state.db.lock().map_err(|e| format!("Failed to lock database: {e}"))?;
+    tag_management::rename_tag(&connection, &request.old_name, &request.new_name)
+}
+
+#[tauri::command]
+pub fn merge_tags(state: State<'_, AppState>, request: MergeTagRequest) -> Result<(), String> {
+    let connection = state.db.lock().map_err(|e| format!("Failed to lock database: {e}"))?;
+    tag_management::merge_tags(&connection, &request.source_name, &request.target_name)
+}
+
+#[tauri::command]
+pub fn cleanup_unused_tags(state: State<'_, AppState>) -> Result<u64, String> {
+    let connection = state.db.lock().map_err(|e| format!("Failed to lock database: {e}"))?;
+    tag_management::cleanup_unused_tags(&connection)
 }
 
 #[tauri::command]
