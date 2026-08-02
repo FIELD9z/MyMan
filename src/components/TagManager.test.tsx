@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TagManager } from './TagManager'
@@ -28,9 +28,9 @@ describe('TagManager', () => {
   it('loads tag usage statistics', async () => {
     render(<TagManager />)
 
-    expect(await screen.findByRole('table', { name: '标签使用统计' })).toBeInTheDocument()
-    expect(screen.getByText('work')).toBeInTheDocument()
-    expect(screen.getByText('personal')).toBeInTheDocument()
+    const table = await screen.findByRole('table', { name: '标签使用统计' })
+    expect(within(table).getByRole('cell', { name: 'work' })).toBeInTheDocument()
+    expect(within(table).getByRole('cell', { name: 'personal' })).toBeInTheDocument()
   })
 
   it('renames a selected tag and refreshes data', async () => {
