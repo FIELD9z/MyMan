@@ -5,7 +5,10 @@ import type {
   Entity,
   EntityPage,
   ListEntitiesRequest,
+  MergeTagRequest,
+  RenameTagRequest,
   SearchEntitiesRequest,
+  TagSummary,
   UpdateEntityRequest,
 } from '../types'
 
@@ -35,6 +38,22 @@ export function searchEntities(request: SearchEntitiesRequest): Promise<EntityPa
 
 export function listTags(): Promise<string[]> {
   return invoke<string[]>('list_tags')
+}
+
+export function listTagSummaries(): Promise<TagSummary[]> {
+  return invoke<TagSummary[]>('list_tag_summaries')
+}
+
+export function renameTag(request: RenameTagRequest): Promise<void> {
+  return invoke('rename_tag', { request })
+}
+
+export function mergeTags(request: MergeTagRequest): Promise<void> {
+  return invoke('merge_tags', { request })
+}
+
+export function cleanupUnusedTags(): Promise<number> {
+  return invoke<number>('cleanup_unused_tags')
 }
 
 export function dashboardSummary(): Promise<DashboardSummary> {
