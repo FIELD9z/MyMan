@@ -1,6 +1,7 @@
 :root {
   --bg: #f6f4ef;
   --surface: rgba(255, 255, 255, 0.82);
+  --sidebar-surface: rgba(255, 255, 255, 0.72);
   --text: #656170;
   --text-h: #14111f;
   --muted: #8f899a;
@@ -23,6 +24,7 @@
   :root {
     --bg: #11121a;
     --surface: rgba(28, 30, 42, 0.82);
+    --sidebar-surface: rgba(17, 18, 26, 0.92);
     --text: #a5a0b5;
     --text-h: #f7f4ff;
     --muted: #7c778b;
