@@ -25,6 +25,12 @@ pub fn archive_entity(state: State<'_, AppState>, id: String) -> Result<(), Stri
 }
 
 #[tauri::command]
+pub fn restore_entity(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let connection = state.db.lock().map_err(|e| format!("Failed to lock database: {e}"))?;
+    entities::restore_entity(&connection, &id)
+}
+
+#[tauri::command]
 pub fn list_entities(state: State<'_, AppState>, request: ListEntitiesRequest) -> Result<EntityPage, String> {
     let connection = state.db.lock().map_err(|e| format!("Failed to lock database: {e}"))?;
     entities::list_entities(&connection, request)
