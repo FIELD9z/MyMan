@@ -3,11 +3,13 @@ import type { Entity } from '../types'
 
 interface Props {
   entity: Entity
+  archived?: boolean
   onEdit: (entity: Entity) => void
   onArchive: (id: string) => void
+  onRestore: (id: string) => void
 }
 
-export function EntityCard({ entity, onEdit, onArchive }: Props) {
+export function EntityCard({ entity, archived = false, onEdit, onArchive, onRestore }: Props) {
   return (
     <article className="entity-card">
       <div>
@@ -24,8 +26,18 @@ export function EntityCard({ entity, onEdit, onArchive }: Props) {
       ) : null}
       <small>{new Date(entity.updatedAt).toLocaleString()}</small>
       <div className="entity-actions">
-        <button onClick={() => onEdit(entity)}>编辑</button>
-        <button className="secondary" onClick={() => onArchive(entity.id)}>归档</button>
+        {archived ? (
+          <button className="secondary" onClick={() => onRestore(entity.id)}>
+            恢复
+          </button>
+        ) : (
+          <>
+            <button onClick={() => onEdit(entity)}>编辑</button>
+            <button className="secondary" onClick={() => onArchive(entity.id)}>
+              归档
+            </button>
+          </>
+        )}
       </div>
     </article>
   )
