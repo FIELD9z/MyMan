@@ -42,6 +42,22 @@ export interface SearchEntitiesRequest extends ListEntitiesRequest {
   searchMode: SearchMode
 }
 
+export interface RenameTagRequest {
+  oldName: string
+  newName: string
+}
+
+export interface MergeTagRequest {
+  sourceName: string
+  targetName: string
+}
+
+export interface TagSummary {
+  name: string
+  activeCount: number
+  archivedCount: number
+}
+
 export interface EntityPage {
   items: Entity[]
   total: number
