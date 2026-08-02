@@ -30,6 +30,9 @@ export interface UpdateEntityRequest {
 export interface ListEntitiesRequest {
   entityType?: EntityType
   tag?: string
+  archived?: boolean
+  limit?: number
+  offset?: number
 }
 
 export type SearchMode = 'and' | 'or'
@@ -37,6 +40,11 @@ export type SearchMode = 'and' | 'or'
 export interface SearchEntitiesRequest extends ListEntitiesRequest {
   query: string
   searchMode: SearchMode
+}
+
+export interface EntityPage {
+  items: Entity[]
+  total: number
 }
 
 export interface DashboardSummary {
