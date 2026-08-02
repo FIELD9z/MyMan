@@ -1,11 +1,14 @@
 use crate::models::{
-    CreateEntityRequest, DashboardSummary, Entity, EntityType, ListEntitiesRequest,
+    CreateEntityRequest, DashboardSummary, Entity, EntityPage, EntityType, ListEntitiesRequest,
     SearchEntitiesRequest, UpdateEntityRequest,
 };
 use rusqlite::types::Type;
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Row};
 use std::collections::BTreeSet;
 use uuid::Uuid;
+
+const DEFAULT_PAGE_LIMIT: u32 = 50;
+const MAX_PAGE_LIMIT: u32 = 200;
 
 pub fn create_entity(
     connection: &mut Connection,
@@ -120,7 +123,7 @@ pub fn update_entity(
 pub fn archive_entity(connection: &Connection, id: &str) -> Result<(), String> {
     let rows = connection
         .execute(
-            "UPDATE entities SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1 AND archived_at IS NULL",
+            "UPDATE entities SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1 AND archived_at IS NULL",
             params![id],
         )
         .map_err(|error| format!("Failed to archive entity: {error}"))?;
@@ -132,19 +135,48 @@ pub fn archive_entity(connection: &Connection, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn restore_entity(connection: &Connection, id: &str) -> Result<(), String> {
+    let rows = connection
+        .execute(
+            "UPDATE entities SET archived_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1 AND archived_at IS NOT NULL",
+            params![id],
+        )
+        .map_err(|error| format!("Failed to restore entity: {error}"))?;
+
+    if rows == 0 {
+        return Err(format!("Entity not found or not archived: {id}"));
+    }
+
+    Ok(())
+}
+
 pub fn list_entities(
     connection: &Connection,
     request: ListEntitiesRequest,
-) -> Result<Vec<Entity>, String> {
-    let mut sql = entity_select_sql(
+) -> Result<EntityPage, String> {
+    let (limit, offset) = pagination(request.limit, request.offset);
+    let mut count_sql = String::from("SELECT COUNT(*) FROM entities e WHERE ");
+    append_archive_filter(&mut count_sql, request.archived);
+
+    let mut count_params = Vec::new();
+    append_entity_filters(
+        &mut count_sql,
+        &mut count_params,
+        request.entity_type,
+        request.tag.as_deref(),
+    );
+    let total = query_count(connection, &count_sql, count_params)?;
+
+    let mut sql = entity_select_sql(&format!(
         r#"
         FROM entities e
         LEFT JOIN entity_contents c ON c.entity_id = e.id
         LEFT JOIN entity_tags et ON et.entity_id = e.id
         LEFT JOIN tags t ON t.id = et.tag_id
-        WHERE e.archived_at IS NULL
+        WHERE {}
         "#,
-    );
+        archive_condition(request.archived)
+    ));
 
     let mut params = Vec::new();
     append_entity_filters(
@@ -153,28 +185,57 @@ pub fn list_entities(
         request.entity_type,
         request.tag.as_deref(),
     );
-    sql.push_str(" GROUP BY e.id ORDER BY e.updated_at DESC LIMIT 100");
+    sql.push_str(" GROUP BY e.id ORDER BY e.updated_at DESC LIMIT ? OFFSET ?");
+    params.push(limit.to_string());
+    params.push(offset.to_string());
 
-    query_entities(connection, &sql, params)
+    Ok(EntityPage {
+        items: query_entities(connection, &sql, params)?,
+        total,
+    })
 }
 
 pub fn search_entities(
     connection: &Connection,
     request: SearchEntitiesRequest,
-) -> Result<Vec<Entity>, String> {
-    let query = request.query.trim();
+) -> Result<EntityPage, String> {
+    let query = request.query.trim().to_owned();
     if query.is_empty() {
         return list_entities(
             connection,
             ListEntitiesRequest {
                 entity_type: request.entity_type,
                 tag: request.tag,
+                archived: request.archived,
+                limit: request.limit,
+                offset: request.offset,
             },
         );
     }
 
-    let fts_query = build_fts_query(query, request.search_mode.operator());
-    let mut sql = entity_select_sql(
+    let (limit, offset) = pagination(request.limit, request.offset);
+    let fts_query = build_fts_query(&query, request.search_mode.operator());
+
+    let mut count_sql = format!(
+        r#"
+        SELECT COUNT(DISTINCT e.id)
+        FROM search_index si
+        JOIN entities e ON e.id = si.entity_id
+        WHERE search_index MATCH ?
+          AND {}
+        "#,
+        archive_condition(request.archived)
+    );
+    let mut count_params = vec![fts_query.clone()];
+    append_entity_filters(
+        &mut count_sql,
+        &mut count_params,
+        request.entity_type,
+        request.tag.as_deref(),
+    );
+    let total = query_count(connection, &count_sql, count_params)?;
+
+    let mut sql = entity_select_sql(&format!(
         r#"
         FROM search_index si
         JOIN entities e ON e.id = si.entity_id
@@ -182,9 +243,10 @@ pub fn search_entities(
         LEFT JOIN entity_tags et ON et.entity_id = e.id
         LEFT JOIN tags t ON t.id = et.tag_id
         WHERE search_index MATCH ?
-          AND e.archived_at IS NULL
+          AND {}
         "#,
-    );
+        archive_condition(request.archived)
+    ));
 
     let mut params = vec![fts_query];
     append_entity_filters(
@@ -193,9 +255,14 @@ pub fn search_entities(
         request.entity_type,
         request.tag.as_deref(),
     );
-    sql.push_str(" GROUP BY e.id ORDER BY rank LIMIT 50");
+    sql.push_str(" GROUP BY e.id ORDER BY rank LIMIT ? OFFSET ?");
+    params.push(limit.to_string());
+    params.push(offset.to_string());
 
-    query_entities(connection, &sql, params)
+    Ok(EntityPage {
+        items: query_entities(connection, &sql, params)?,
+        total,
+    })
 }
 
 pub fn list_tags(connection: &Connection) -> Result<Vec<String>, String> {
@@ -236,9 +303,11 @@ pub fn dashboard_summary(connection: &Connection) -> Result<DashboardSummary, St
         .query_row(
             r#"
             SELECT COUNT(*)
-            FROM reminders
-            WHERE triggered_at IS NULL
-              AND date(remind_at) <= date('now', 'localtime')
+            FROM reminders r
+            JOIN entities e ON e.id = r.entity_id
+            WHERE r.triggered_at IS NULL
+              AND e.archived_at IS NULL
+              AND date(r.remind_at, 'localtime') <= date('now', 'localtime')
             "#,
             [],
             |row| row.get(0),
@@ -285,6 +354,16 @@ fn query_entities(
     Ok(entities)
 }
 
+fn query_count(
+    connection: &Connection,
+    sql: &str,
+    params: Vec<String>,
+) -> Result<i64, String> {
+    connection
+        .query_row(sql, params_from_iter(params.iter()), |row| row.get(0))
+        .map_err(|error| format!("Failed to count entities: {error}"))
+}
+
 fn map_entity_row(row: &Row<'_>) -> rusqlite::Result<Entity> {
     let entity_type_value: String = row.get(1)?;
     let entity_type = EntityType::from_db_value(&entity_type_value).map_err(|error| {
@@ -325,6 +404,18 @@ fn entity_select_sql(from_clause: &str) -> String {
     format!("{} {}", entity_select_columns(), from_clause)
 }
 
+fn archive_condition(archived: bool) -> &'static str {
+    if archived {
+        "e.archived_at IS NOT NULL"
+    } else {
+        "e.archived_at IS NULL"
+    }
+}
+
+fn append_archive_filter(sql: &mut String, archived: bool) {
+    sql.push_str(archive_condition(archived));
+}
+
 fn append_entity_filters(
     sql: &mut String,
     params: &mut Vec<String>,
@@ -344,6 +435,13 @@ fn append_entity_filters(
             params.push(tag);
         }
     }
+}
+
+fn pagination(limit: Option<u32>, offset: Option<u32>) -> (u32, u32) {
+    (
+        limit.unwrap_or(DEFAULT_PAGE_LIMIT).clamp(1, MAX_PAGE_LIMIT),
+        offset.unwrap_or(0),
+    )
 }
 
 fn replace_tags(connection: &Connection, entity_id: &str, tags: &[String]) -> Result<(), String> {
@@ -493,12 +591,27 @@ mod tests {
         }
     }
 
-    fn titles(entities: Vec<Entity>) -> BTreeSet<String> {
-        entities.into_iter().map(|entity| entity.title).collect()
+    fn search_request(query: &str, search_mode: SearchMode) -> SearchEntitiesRequest {
+        SearchEntitiesRequest {
+            query: query.to_owned(),
+            search_mode,
+            entity_type: None,
+            tag: None,
+            archived: false,
+            limit: None,
+            offset: None,
+        }
+    }
+
+    fn titles(page: EntityPage) -> BTreeSet<String> {
+        page.items
+            .into_iter()
+            .map(|entity| entity.title)
+            .collect()
     }
 
     #[test]
-    fn creates_updates_lists_and_archives_entities() {
+    fn creates_updates_archives_and_restores_entities() {
         let mut connection = test_connection();
 
         let created = create_entity(
@@ -512,7 +625,8 @@ mod tests {
 
         let listed =
             list_entities(&connection, ListEntitiesRequest::default()).expect("list entities");
-        assert_eq!(listed.len(), 1);
+        assert_eq!(listed.total, 1);
+        assert_eq!(listed.items.len(), 1);
 
         let updated = update_entity(
             &mut connection,
@@ -526,8 +640,24 @@ mod tests {
         archive_entity(&connection, &created.id).expect("archive entity");
         let visible =
             list_entities(&connection, ListEntitiesRequest::default()).expect("list visible");
-        assert!(visible.is_empty());
-        assert!(archive_entity(&connection, &created.id).is_err());
+        assert_eq!(visible.total, 0);
+
+        let archived = list_entities(
+            &connection,
+            ListEntitiesRequest {
+                archived: true,
+                ..Default::default()
+            },
+        )
+        .expect("list archived");
+        assert_eq!(archived.total, 1);
+        assert_eq!(archived.items[0].id, created.id);
+
+        restore_entity(&connection, &created.id).expect("restore entity");
+        let restored =
+            list_entities(&connection, ListEntitiesRequest::default()).expect("list restored");
+        assert_eq!(restored.total, 1);
+        assert!(restore_entity(&connection, &created.id).is_err());
     }
 
     #[test]
@@ -582,23 +712,65 @@ mod tests {
         let work_entities = list_entities(
             &connection,
             ListEntitiesRequest {
-                entity_type: None,
                 tag: Some("WORK".to_owned()),
+                ..Default::default()
             },
         )
         .expect("filter by tag");
-        assert_eq!(work_entities.len(), 2);
+        assert_eq!(work_entities.total, 2);
 
         let note_entities = list_entities(
             &connection,
             ListEntitiesRequest {
                 entity_type: Some(EntityType::Note),
                 tag: Some("work".to_owned()),
+                ..Default::default()
             },
         )
         .expect("filter by type and tag");
-        assert_eq!(note_entities.len(), 1);
-        assert_eq!(note_entities[0].title, "Tagged note");
+        assert_eq!(note_entities.total, 1);
+        assert_eq!(note_entities.items[0].title, "Tagged note");
+
+        archive_entity(&connection, &note.id).expect("archive tagged note");
+        assert_eq!(list_tags(&connection).expect("active tags"), vec!["work"]);
+    }
+
+    #[test]
+    fn paginates_entities_and_reports_total() {
+        let mut connection = test_connection();
+        for title in ["First", "Second", "Third"] {
+            create_entity(
+                &mut connection,
+                create_request(EntityType::Note, title, "Body", &[]),
+            )
+            .expect("create entity");
+        }
+
+        let first_page = list_entities(
+            &connection,
+            ListEntitiesRequest {
+                limit: Some(2),
+                offset: Some(0),
+                ..Default::default()
+            },
+        )
+        .expect("first page");
+        let second_page = list_entities(
+            &connection,
+            ListEntitiesRequest {
+                limit: Some(2),
+                offset: Some(2),
+                ..Default::default()
+            },
+        )
+        .expect("second page");
+
+        assert_eq!(first_page.total, 3);
+        assert_eq!(first_page.items.len(), 2);
+        assert_eq!(second_page.total, 3);
+        assert_eq!(second_page.items.len(), 1);
+        assert_ne!(first_page.items[0].id, second_page.items[0].id);
+        assert_ne!(first_page.items[1].id, second_page.items[0].id);
     }
 
     #[test]
@@ -633,29 +805,19 @@ mod tests {
 
         let and_results = search_entities(
             &connection,
-            SearchEntitiesRequest {
-                query: "alpha beta".to_owned(),
-                search_mode: SearchMode::And,
-                entity_type: None,
-                tag: None,
-            },
+            search_request("alpha beta", SearchMode::And),
         )
         .expect("and search");
+        assert_eq!(and_results.total, 1);
         assert_eq!(
             titles(and_results),
             BTreeSet::from(["Alpha beta note".to_owned()])
         );
 
-        let or_results = search_entities(
-            &connection,
-            SearchEntitiesRequest {
-                query: "alpha beta".to_owned(),
-                search_mode: SearchMode::Or,
-                entity_type: None,
-                tag: None,
-            },
-        )
-        .expect("or search");
+        let or_results =
+            search_entities(&connection, search_request("alpha beta", SearchMode::Or))
+                .expect("or search");
+        assert_eq!(or_results.total, 3);
         assert_eq!(
             titles(or_results),
             BTreeSet::from([
@@ -665,31 +827,19 @@ mod tests {
             ])
         );
 
-        let filtered_by_type = search_entities(
-            &connection,
-            SearchEntitiesRequest {
-                query: "alpha".to_owned(),
-                search_mode: SearchMode::And,
-                entity_type: Some(EntityType::Task),
-                tag: None,
-            },
-        )
-        .expect("type filtered search");
+        let mut filtered_by_type_request = search_request("alpha", SearchMode::And);
+        filtered_by_type_request.entity_type = Some(EntityType::Task);
+        let filtered_by_type =
+            search_entities(&connection, filtered_by_type_request).expect("type filtered search");
         assert_eq!(
             titles(filtered_by_type),
             BTreeSet::from(["Alpha task".to_owned()])
         );
 
-        let filtered_by_tag = search_entities(
-            &connection,
-            SearchEntitiesRequest {
-                query: "beta".to_owned(),
-                search_mode: SearchMode::And,
-                entity_type: None,
-                tag: Some("project".to_owned()),
-            },
-        )
-        .expect("tag filtered search");
+        let mut filtered_by_tag_request = search_request("beta", SearchMode::And);
+        filtered_by_tag_request.tag = Some("project".to_owned());
+        let filtered_by_tag =
+            search_entities(&connection, filtered_by_tag_request).expect("tag filtered search");
         assert_eq!(
             titles(filtered_by_tag),
             BTreeSet::from(["Alpha beta note".to_owned(), "Beta guide".to_owned()])
@@ -697,7 +847,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_search_uses_list_filters() {
+    fn empty_search_uses_list_filters_and_paging() {
         let mut connection = test_connection();
 
         create_entity(
@@ -718,10 +868,17 @@ mod tests {
                 search_mode: SearchMode::And,
                 entity_type: Some(EntityType::Note),
                 tag: Some("work".to_owned()),
+                archived: false,
+                limit: Some(1),
+                offset: Some(0),
             },
         )
         .expect("empty search");
 
-        assert_eq!(titles(results), BTreeSet::from(["Visible note".to_owned()]));
+        assert_eq!(results.total, 1);
+        assert_eq!(
+            titles(results),
+            BTreeSet::from(["Visible note".to_owned()])
+        );
     }
 }
